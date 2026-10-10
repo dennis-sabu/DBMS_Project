@@ -2,16 +2,87 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
 import { Menu, X, ArrowRight, LogOut, User } from "lucide-react";
 import LogoIcon from "@/assets/logo-icon";
 import { cn } from "@/lib/utils";
-import { useNotesStore } from "@/lib/notes-store";
+import { createClient } from "@/lib/supabase/client";
+import type { User as SupabaseUser } from "@supabase/supabase-js";
 
 export function Navbar() {
+  const router = useRouter();
+  const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
-  const { currentUser, logout, isLoaded } = useNotesStore();
+
+  // Auth state — read directly from Supabase so it's always accurate
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [userName, setUserName] = useState<string>("");
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const supabase = createClient();
+
+    // Get initial session
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      setUser(user ?? null);
+      if (user) fetchName(supabase, user);
+      setReady(true);
+    });
+
+    // Listen for login / logout events
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, session) => {
+        const u = session?.user ?? null;
+        setUser(u);
+        if (u) {
+          await fetchName(supabase, u);
+        } else {
+          setUserName("");
+        }
+        setReady(true);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async function fetchName(supabase: any, user: SupabaseUser) {
+    try {
+      const { data } = await supabase
+        .from("users")
+        .select("name")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (data?.name) {
+        setUserName(data.name);
+        return;
+      }
+    } catch {
+      // Fall through to fallback
+    }
+    const fallback =
+      (user.user_metadata?.name as string | undefined) ||
+      user.email?.split("@")[0] ||
+      "Student";
+    setUserName(fallback);
+  }
+
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    setUser(null);
+    setUserName("");
+    router.push("/");
+    router.refresh();
+  }
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -20,10 +91,15 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const navLinks = currentUser
+  const isAdmin =
+    user?.email === "dennissabu444@gmail.com" ||
+    user?.app_metadata?.role === "admin";
+
+  const navLinks = user
     ? [
         { label: "Home", href: "/" },
         { label: "Browse Notes", href: "/browse" },
+        ...(isAdmin ? [{ label: "Admin Console", href: "/admin" }] : []),
         { label: "Upload Notes", href: "/upload" },
         { label: "My Notes", href: "/my-notes" },
         { label: "Bookmarks", href: "/bookmarks" },
@@ -62,7 +138,10 @@ export function Navbar() {
             <Link
               key={l.label}
               href={l.href}
-              className="rounded-full px-3.5 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-900/5 hover:text-slate-950"
+              className={cn(
+                "rounded-full px-3.5 py-2 text-sm font-medium transition-colors hover:bg-slate-900/5 hover:text-slate-950",
+                pathname === l.href ? "text-slate-950 font-semibold" : "text-slate-600"
+              )}
             >
               {l.label}
             </Link>
@@ -71,26 +150,28 @@ export function Navbar() {
 
         {/* Right CTAs */}
         <div className="hidden items-center gap-2 md:flex">
-          {isLoaded && currentUser ? (
+          {ready && user ? (
             <div className="flex items-center gap-2">
               <Link
                 href="/profile"
-                className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-xs hover:bg-white"
+                className="flex items-center gap-2 rounded-full border border-slate-200/80 bg-white/80 px-3 py-1.5 text-xs font-semibold text-slate-900 shadow-xs transition-colors hover:bg-white"
               >
                 <span className="grid size-6 place-items-center rounded-full bg-slate-950 text-[11px] text-white">
                   <User className="size-3" />
                 </span>
-                <span>{currentUser.name}</span>
+                <span className="max-w-[120px] truncate">
+                  {userName || user.email?.split("@")[0]}
+                </span>
               </Link>
               <button
-                onClick={logout}
-                title="Logout"
+                onClick={handleLogout}
+                title="Sign out"
                 className="grid size-9 place-items-center rounded-full text-slate-600 transition-colors hover:bg-rose-50 hover:text-rose-600"
               >
                 <LogOut className="size-4" />
               </button>
             </div>
-          ) : (
+          ) : ready && !user ? (
             <>
               <Link
                 href="/login"
@@ -108,6 +189,9 @@ export function Navbar() {
                 </Link>
               </motion.div>
             </>
+          ) : (
+            // Loading skeleton — prevents layout shift
+            <div className="h-8 w-32 animate-pulse rounded-full bg-slate-200/60" />
           )}
         </div>
 
@@ -137,22 +221,25 @@ export function Navbar() {
                   key={l.label}
                   href={l.href}
                   onClick={() => setOpen(false)}
-                  className="rounded-2xl px-4 py-3 text-sm font-medium text-slate-800 hover:bg-slate-900/5"
+                  className={cn(
+                    "rounded-2xl px-4 py-3 text-sm font-medium hover:bg-slate-900/5",
+                    pathname === l.href ? "text-slate-950 font-semibold" : "text-slate-800"
+                  )}
                 >
                   {l.label}
                 </Link>
               ))}
               <div className="mt-2 flex flex-col gap-2 border-t border-slate-900/10 p-2">
-                {currentUser ? (
+                {user ? (
                   <button
-                    onClick={() => {
-                      logout();
+                    onClick={async () => {
                       setOpen(false);
+                      await handleLogout();
                     }}
                     className="flex w-full items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-600"
                   >
                     <LogOut className="size-4" />
-                    Logout
+                    Sign Out
                   </button>
                 ) : (
                   <>

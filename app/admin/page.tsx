@@ -82,10 +82,37 @@ export default function AdminDashboardPage() {
   const [academicCat, setAcademicCat] = useState<"years" | "courses" | "departments" | "semesters" | "subjects">("subjects");
   const [newAcademicInput, setNewAcademicInput] = useState("");
 
+  /* Admin Password Login State */
+  const [adminPasswordInput, setAdminPasswordInput] = useState("");
+  const [adminPassError, setAdminPassError] = useState("");
+  const [adminPassLoading, setAdminPassLoading] = useState(false);
+
+  const isAdmin =
+    currentUser?.role === "admin" ||
+    currentUser?.email === "dennissabu444@gmail.com";
+
+  const handleAdminPasswordUnlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdminPassError("");
+
+    if (adminPasswordInput.trim() !== "d21m1025") {
+      setAdminPassError("Incorrect admin password. Please try again.");
+      return;
+    }
+
+    setAdminPassLoading(true);
+    try {
+      await loginAsAdmin("d21m1025");
+      window.location.reload();
+    } catch {
+      window.location.reload();
+    }
+  };
+
   if (!isLoaded) return null;
 
-  /* ACCESS CONTROL GUARD (Item 19) */
-  if (!currentUser || currentUser.role !== "admin") {
+  /* ACCESS CONTROL GUARD */
+  if (!isAdmin) {
     return (
       <main className="min-h-screen bg-slate-50 font-sans text-slate-950 antialiased">
         <Navbar />
@@ -101,20 +128,35 @@ export default function AdminDashboardPage() {
                 </div>
 
                 <h1 className="mt-5 text-2xl font-bold tracking-tight text-slate-950">
-                  Access Denied — Admin Privileges Required
+                  Administrator Console
                 </h1>
                 <p className="mt-2 text-xs leading-relaxed text-slate-600">
-                  You are currently logged in as a <strong>Student User</strong> ({currentUser ? currentUser.name : "Guest"}).
-                  Access to the administrator console is restricted to NotesHub Administrators.
+                  Enter the administrator password to manage NotesHub moderation, users, and settings.
                 </p>
 
-                <div className="mt-6 space-y-3">
+                <form onSubmit={handleAdminPasswordUnlock} className="mt-6 space-y-3">
+                  {adminPassError && (
+                    <div className="rounded-xl border border-rose-200 bg-rose-50 p-2.5 text-xs font-semibold text-rose-700">
+                      {adminPassError}
+                    </div>
+                  )}
+
+                  <input
+                    type="password"
+                    value={adminPasswordInput}
+                    onChange={(e) => setAdminPasswordInput(e.target.value)}
+                    placeholder="Enter admin password (d21m1025)"
+                    required
+                    className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-medium text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  />
+
                   <button
-                    onClick={loginAsAdmin}
-                    className="flex w-full items-center justify-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-xs font-semibold text-white shadow-md hover:bg-slate-800"
+                    type="submit"
+                    disabled={adminPassLoading}
+                    className="flex w-full items-center justify-center gap-2 rounded-full bg-slate-950 px-5 py-3 text-xs font-semibold text-white shadow-md transition-colors hover:bg-slate-800 disabled:opacity-60"
                   >
                     <FaUserShield className="size-3.5 text-amber-400" />
-                    Switch to Admin Demo Mode
+                    {adminPassLoading ? "Verifying…" : "Unlock Admin Console"}
                   </button>
 
                   <Link
@@ -123,7 +165,7 @@ export default function AdminDashboardPage() {
                   >
                     Return to Public Notes Hub
                   </Link>
-                </div>
+                </form>
               </div>
             </Reveal>
           </div>

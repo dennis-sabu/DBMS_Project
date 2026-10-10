@@ -318,11 +318,25 @@ export function UploadNoteForm() {
             <select
               id="department"
               name="department"
-              defaultValue=""
+              defaultValue={currentUser?.department || ""}
               className={cn(inputClass, errors.department && "border-rose-300 focus:border-rose-400 focus:ring-rose-400/20")}
             >
               <option value="" disabled>Select Department...</option>
-              {departmentsList.map((d) => (
+              {(departmentsList && departmentsList.length > 0
+                ? departmentsList
+                : [
+                    "Artificial Intelligence and Data Science",
+                    "Basic Sciences & Humanities",
+                    "Civil Engineering",
+                    "Computer Science & Engineering",
+                    "Electrical & Electronics Engineering",
+                    "Electronics and Communication Engineering",
+                    "Electronics and Computer Engineering",
+                    "Electronics and Instrumentation Engineering",
+                    "Information Technology",
+                    "Mechanical Engineering",
+                  ]
+              ).map((d) => (
                 <option key={d} value={d}>{d}</option>
               ))}
             </select>
@@ -346,20 +360,38 @@ export function UploadNoteForm() {
         </div>
 
         {/* Subject */}
-        <Field label="Subject" required hint="e.g. Operating Systems">
-          <input
+        <Field label="Subject" required>
+          <select
             id="subject"
             name="subject"
-            type="text"
-            list="subject-options"
-            placeholder="e.g. Data Structures & Algorithms"
+            defaultValue=""
             className={cn(inputClass, errors.subject && "border-rose-300 focus:border-rose-400 focus:ring-rose-400/20")}
-          />
-          <datalist id="subject-options">
-            {subjectsList.map((sub) => (
-              <option key={sub} value={sub} />
+          >
+            <option value="" disabled>Select Subject...</option>
+            {(subjectsList && subjectsList.length > 0
+              ? subjectsList
+              : [
+                  "Applied Mathematics II",
+                  "Database Management Systems",
+                  "Data Structures & Algorithms",
+                  "Digital Logic Design",
+                  "Linear Algebra",
+                  "Operating Systems",
+                  "Computer Networks",
+                  "Software Engineering",
+                  "Object Oriented Programming",
+                  "Artificial Intelligence",
+                  "Machine Learning",
+                  "Cloud Computing",
+                  "Cyber Security",
+                  "Web Development",
+                ]
+            ).map((sub) => (
+              <option key={sub} value={sub}>
+                {sub}
+              </option>
             ))}
-          </datalist>
+          </select>
           {errors.subject && <FieldError msg={errors.subject} />}
         </Field>
 

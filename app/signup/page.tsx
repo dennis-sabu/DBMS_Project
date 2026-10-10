@@ -1,37 +1,72 @@
 "use client";
 
-import { useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { useState, useEffect } from "react";
+import { motion } from "motion/react";
 import {
   FaArrowRight,
   FaUserPlus,
   FaCircleExclamation,
   FaCheck,
+  FaEnvelope,
 } from "react-icons/fa6";
 import { Navbar } from "@/components/ui/navbar";
 import { Reveal } from "@/components/ui/motion-presets";
 import { SectionBg } from "@/components/ui/section-bg";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useNotesStore } from "@/lib/notes-store";
+import { createClient } from "@/lib/supabase/client";
+
+const FALLBACK_DEPARTMENTS = [
+  "Computer Science & Engineering",
+  "Information Technology",
+  "Electrical & Electronics Engineering",
+  "Mechanical Engineering",
+  "Civil Engineering",
+  "Basic Sciences & Humanities",
+  "Electronics and Communication Engineering",
+  "Electronics and Computer Engineering",
+  "Artificial Intelligence and Data Science",
+  "Electronics and Instrumentation Engineering",
+];
+
+const COURSES = ["B.Tech", "B.Sc", "B.CA", "M.Tech", "M.Sc"];
+const ACADEMIC_YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 
 export default function SignupPage() {
   const router = useRouter();
-  const { signupUser, academicYears, coursesList, departmentsList } = useNotesStore();
 
+  const [departments, setDepartments] = useState<string[]>(FALLBACK_DEPARTMENTS);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [course, setCourse] = useState(coursesList[0] || "B.Tech");
-  const [department, setDepartment] = useState(departmentsList[0] || "Computer Science & Engineering");
-  const [academicYear, setAcademicYear] = useState(academicYears[0] || "1st Year");
+  const [course, setCourse] = useState(COURSES[0]);
+  const [department, setDepartment] = useState(FALLBACK_DEPARTMENTS[0]);
+  const [academicYear, setAcademicYear] = useState(ACADEMIC_YEARS[0]);
 
   const [errorMsg, setErrorMsg] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [requiresConfirmation, setRequiresConfirmation] = useState(false);
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("departments")
+      .select("name")
+      .order("name")
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          const list = data.map((d) => d.name);
+          setDepartments(list);
+          if (!list.includes(department)) {
+            setDepartment(list[0]);
+          }
+        }
+      });
+  }, [department]);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setErrorMsg("");
 
@@ -54,22 +89,50 @@ export default function SignupPage() {
 
     setLoading(true);
 
-    setTimeout(() => {
-      signupUser({
-        name: name.trim(),
-        email: email.trim(),
-        department,
-        course,
-        academicYear,
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          email: email.trim(),
+          password,
+          course,
+          department,
+          academicYear,
+        }),
       });
 
+      const data = await res.json();
       setLoading(false);
+
+      if (!res.ok || data.error) {
+        const msg = data.error || "Failed to create account.";
+        setErrorMsg(
+          msg.includes("already registered")
+            ? "This email is already registered. Please sign in instead."
+            : msg
+        );
+        return;
+      }
+
       setSuccess(true);
+
+      // Sign in automatically to establish the user session immediately
+      const supabase = createClient();
+      await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
       setTimeout(() => {
         router.push("/browse");
+        router.refresh();
       }, 1000);
-    }, 600);
+    } catch {
+      setLoading(false);
+      setErrorMsg("Network error occurred. Please try again.");
+    }
   }
 
   return (
@@ -94,11 +157,28 @@ export default function SignupPage() {
               </p>
 
               {success ? (
-                <div className="mt-6 rounded-2xl bg-emerald-500/10 p-6 text-center text-emerald-800">
-                  <FaCheck className="mx-auto size-8 text-emerald-600" />
-                  <h3 className="mt-2 text-base font-bold">Registration Successful!</h3>
-                  <p className="mt-1 text-xs text-emerald-700">Redirecting to NotesHub Browse...</p>
-                </div>
+                requiresConfirmation ? (
+                  <div className="mt-6 rounded-2xl bg-emerald-500/10 p-6 text-center text-emerald-900 border border-emerald-200">
+                    <FaEnvelope className="mx-auto size-8 text-emerald-600" />
+                    <h3 className="mt-2 text-base font-bold">Confirmation Email Sent!</h3>
+                    <p className="mt-2 text-xs leading-relaxed text-emerald-800">
+                      We sent a confirmation link to <strong>{email}</strong>. Please check your inbox and confirm your email before signing in.
+                    </p>
+                    <Link
+                      href="/login"
+                      className="mt-4 inline-flex items-center gap-1.5 rounded-full bg-slate-950 px-5 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                    >
+                      Go to Sign in
+                      <FaArrowRight className="size-3" />
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="mt-6 rounded-2xl bg-emerald-500/10 p-6 text-center text-emerald-800 border border-emerald-200">
+                    <FaCheck className="mx-auto size-8 text-emerald-600" />
+                    <h3 className="mt-2 text-base font-bold">Registration Successful!</h3>
+                    <p className="mt-1 text-xs text-emerald-700">Redirecting to NotesHub Browse…</p>
+                  </div>
+                )
               ) : (
                 <form onSubmit={handleSubmit} className="mt-7 space-y-3">
                   {errorMsg && (
@@ -144,7 +224,7 @@ export default function SignupPage() {
                         onChange={(e) => setCourse(e.target.value)}
                         className="mt-1.5 block w-full rounded-2xl border border-white/70 bg-white/80 px-3 py-3 text-xs font-medium text-slate-900 outline-none"
                       >
-                        {coursesList.map((c) => (
+                        {COURSES.map((c) => (
                           <option key={c} value={c}>{c}</option>
                         ))}
                       </select>
@@ -159,7 +239,7 @@ export default function SignupPage() {
                         onChange={(e) => setAcademicYear(e.target.value)}
                         className="mt-1.5 block w-full rounded-2xl border border-white/70 bg-white/80 px-3 py-3 text-xs font-medium text-slate-900 outline-none"
                       >
-                        {academicYears.map((y) => (
+                        {ACADEMIC_YEARS.map((y) => (
                           <option key={y} value={y}>{y}</option>
                         ))}
                       </select>
@@ -175,7 +255,7 @@ export default function SignupPage() {
                       onChange={(e) => setDepartment(e.target.value)}
                       className="mt-1.5 block w-full rounded-2xl border border-white/70 bg-white/80 px-3 py-3 text-xs font-medium text-slate-900 outline-none"
                     >
-                      {departmentsList.map((d) => (
+                      {departments.map((d) => (
                         <option key={d} value={d}>{d}</option>
                       ))}
                     </select>

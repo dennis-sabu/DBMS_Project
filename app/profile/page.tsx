@@ -16,11 +16,13 @@ import {
   FaXmark,
 } from "react-icons/fa6";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Navbar } from "@/components/ui/navbar";
 import { SectionBg } from "@/components/ui/section-bg";
 import { useNotesStore } from "@/lib/notes-store";
 
 export default function ProfilePage() {
+  const router = useRouter();
   const {
     currentUser,
     myNotes,
@@ -234,7 +236,11 @@ export default function ProfilePage() {
               </div>
 
               <button
-                onClick={logout}
+                onClick={async () => {
+                  await logout();
+                  router.push("/");
+                  router.refresh();
+                }}
                 className="rounded-full border border-rose-200 bg-rose-50 px-5 py-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-100"
               >
                 Sign Out
