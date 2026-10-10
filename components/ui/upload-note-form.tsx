@@ -18,6 +18,49 @@ import {
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useNotesStore } from "@/lib/notes-store";
+import { createClient } from "@/lib/supabase/client";
+
+/**
+ * Uploads a file straight to Supabase Storage using a signed upload URL
+ * issued by /api/upload. Avoids routing the file bytes through the server.
+ */
+async function uploadNoteFile(
+  file: File,
+  uploaderId?: string,
+  token?: string
+): Promise<string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const metaRes = await fetch("/api/upload", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      fileName: file.name,
+      contentType: file.type,
+      uploaderId,
+    }),
+  });
+  const meta = await metaRes.json();
+  if (!metaRes.ok) {
+    throw new Error(meta.error || "Could not prepare the upload.");
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase.storage
+    .from("notes")
+    .uploadToSignedUrl(meta.path, meta.token, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+
+  if (error) throw error;
+  return meta.publicUrl as string;
+}
 
 const ACCEPTED = [
   "application/pdf",
@@ -127,7 +170,7 @@ export function UploadNoteForm() {
     if (f) handleFile(f);
   }
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (!currentUser) return;
 
@@ -156,8 +199,21 @@ export function UploadNoteForm() {
 
     setSubmitting(true);
 
-    setTimeout(() => {
-      addNote({
+    try {
+      let fileUrl: string | undefined;
+      if (file) {
+        let token: string | undefined;
+        try {
+          const supabase = createClient();
+          const { data: sessionData } = await supabase.auth.getSession();
+          token = sessionData?.session?.access_token;
+        } catch {
+          // Token retrieval failed, will fall back to uploaderId verification
+        }
+        fileUrl = await uploadNoteFile(file, currentUser.id, token);
+      }
+
+      await addNote({
         title,
         description,
         academicYear,
@@ -170,11 +226,21 @@ export function UploadNoteForm() {
         fileName: file ? file.name : "Document.pdf",
         fileSize: file ? formatSize(file.size) : "2.5 MB",
         fileType: file ? file.type : "PDF Document",
+        fileUrl,
       });
 
-      setSubmitting(false);
       setSubmitted(true);
-    }, 800);
+    } catch (err) {
+      setErrors((prev) => ({
+        ...prev,
+        file:
+          err instanceof Error
+            ? `Upload failed: ${err.message}`
+            : "Upload failed. Please try again.",
+      }));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   /* Auth gate */
