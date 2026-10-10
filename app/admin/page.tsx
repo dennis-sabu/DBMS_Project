@@ -35,6 +35,7 @@ import { Navbar } from "@/components/ui/navbar";
 import { SectionBg } from "@/components/ui/section-bg";
 import { Reveal, Stagger, StaggerItem } from "@/components/ui/motion-presets";
 import { useNotesStore, AcademicNote } from "@/lib/notes-store";
+import { NoteViewer } from "@/components/ui/note-viewer";
 
 export default function AdminDashboardPage() {
   const {
@@ -462,9 +463,10 @@ export default function AdminDashboardPage() {
                         <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 lg:border-t-0 lg:pt-0">
                           <button
                             onClick={() => setPreviewNote(note)}
-                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50 shadow-xs"
+                            title="View and verify document"
                           >
-                            <FaEye className="size-3" /> Preview
+                            <FaEye className="size-3 text-sky-600" /> View Document
                           </button>
 
                           <button
@@ -909,41 +911,46 @@ export default function AdminDashboardPage() {
         )}
       </AnimatePresence>
 
-      {/* Note Preview Modal */}
-      <AnimatePresence>
-        {previewNote && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" onClick={() => setPreviewNote(null)} />
-            <div className="relative w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl text-slate-900">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="text-base font-bold text-slate-950">Preview Note Details</h3>
-                <button onClick={() => setPreviewNote(null)} className="text-slate-400 hover:text-slate-950">
-                  <FaXmark className="size-4" />
-                </button>
-              </div>
-              <div className="mt-4 space-y-2 text-xs text-slate-700">
-                <p><strong>Title:</strong> {previewNote.title}</p>
-                <p><strong>Subject:</strong> {previewNote.subject}</p>
-                <p><strong>Course:</strong> {previewNote.course}</p>
-                <p><strong>Department:</strong> {previewNote.department}</p>
-                <p><strong>Semester:</strong> {previewNote.semester}</p>
-                <p><strong>Academic Year:</strong> {previewNote.academicYear}</p>
-                <p><strong>Uploader:</strong> {previewNote.uploaderName}</p>
-                <p><strong>File:</strong> {previewNote.fileName} ({previewNote.fileSize})</p>
-                <p><strong>Description:</strong> {previewNote.description}</p>
-              </div>
-              <div className="mt-6 flex justify-end">
+      {/* Note Document Viewer Modal */}
+      <NoteViewer
+        note={{
+          fileUrl: previewNote?.fileUrl,
+          fileName: previewNote?.fileName || "Document.pdf",
+          fileType: previewNote?.fileType || "PDF Document",
+          title: previewNote?.title || "Note",
+        }}
+        isOpen={!!previewNote}
+        onClose={() => setPreviewNote(null)}
+        actions={
+          previewNote && !previewNote.isDeleted ? (
+            <div className="flex items-center gap-2">
+              {previewNote.status !== "Approved" && (
                 <button
-                  onClick={() => setPreviewNote(null)}
-                  className="rounded-full bg-slate-950 px-5 py-2 text-xs font-semibold text-white hover:bg-slate-800"
+                  onClick={() => {
+                    adminApproveNote(previewNote.id);
+                    setPreviewNote(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 transition-colors"
                 >
-                  Close Preview
+                  <FaCheck className="size-3" /> Approve
                 </button>
-              </div>
+              )}
+              {previewNote.status !== "Rejected" && (
+                <button
+                  onClick={() => {
+                    const id = previewNote.id;
+                    setPreviewNote(null);
+                    setRejectingNoteId(id);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-100 transition-colors"
+                >
+                  <FaXmark className="size-3" /> Reject
+                </button>
+              )}
             </div>
-          </div>
-        )}
-      </AnimatePresence>
+          ) : undefined
+        }
+      />
 
       {/* Admin Metadata Edit Modal */}
       <AnimatePresence>

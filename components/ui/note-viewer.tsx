@@ -29,6 +29,7 @@ interface NoteViewerProps {
   };
   isOpen: boolean;
   onClose: () => void;
+  actions?: React.ReactNode;
 }
 
 function extOf(name: string) {
@@ -71,7 +72,7 @@ function isOfficeDoc(type: string, name: string) {
   );
 }
 
-export function NoteViewer({ note, isOpen, onClose }: NoteViewerProps) {
+export function NoteViewer({ note, isOpen, onClose, actions }: NoteViewerProps) {
   const [scale, setScale] = useState(1);
   const [rotation, setRotation] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -211,7 +212,8 @@ export function NoteViewer({ note, isOpen, onClose }: NoteViewerProps) {
               </h2>
               <span className="text-xs text-slate-500 shrink-0">{note.fileName}</span>
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1.5 shrink-0">
+              {actions && <div className="flex items-center gap-2 mr-2">{actions}</div>}
               <button
                 onClick={download}
                 className="grid size-8 place-items-center rounded-full bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-colors"
