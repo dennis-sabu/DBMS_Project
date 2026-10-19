@@ -18,6 +18,8 @@ import {
 import { SectionBg } from "@/components/ui/section-bg";
 import { useNotesStore, AcademicNote } from "@/lib/notes-store";
 import { NoteViewer } from "@/components/ui/note-viewer";
+import { ALL_SUBJECTS_FLAT } from "@/lib/filter-config";
+import { CustomSelect } from "@/components/ui/custom-select";
 
 export default function BrowsePage() {
   const {
@@ -82,7 +84,7 @@ export default function BrowsePage() {
       <Navbar />
 
       {/* Header section */}
-      <section className="relative isolate overflow-hidden bg-gradient-to-b from-sky-200 via-sky-100 to-slate-50 pt-32 pb-16">
+      <section className="relative z-30 bg-gradient-to-b from-sky-200 via-sky-100 to-slate-50 pt-32 pb-20">
         <SectionBg />
 
         <div className="relative z-10 mx-auto w-full max-w-[1280px] px-6">
@@ -132,97 +134,91 @@ export default function BrowsePage() {
             <div className="grid gap-3 rounded-3xl border border-white/70 bg-white/60 p-4 shadow-sm backdrop-blur-md sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6">
               {/* Academic Year */}
               <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Academic Year
                 </label>
-                <select
+                <CustomSelect
+                  size="sm"
                   value={selectedYear}
-                  onChange={(e) => setSelectedYear(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 outline-none transition-colors hover:border-slate-300"
-                >
-                  {years.map((y) => (
-                    <option key={y} value={y}>{y}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedYear(val)}
+                  options={years}
+                  placeholder="All Years"
+                />
               </div>
 
               {/* Course */}
               <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Course
                 </label>
-                <select
+                <CustomSelect
+                  size="sm"
                   value={selectedCourse}
-                  onChange={(e) => setSelectedCourse(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 outline-none transition-colors hover:border-slate-300"
-                >
-                  {courses.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedCourse(val)}
+                  options={courses}
+                  placeholder="All Courses"
+                />
               </div>
 
               {/* Department */}
               <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Department
                 </label>
-                <select
+                <CustomSelect
+                  size="sm"
                   value={selectedDept}
-                  onChange={(e) => setSelectedDept(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 outline-none transition-colors hover:border-slate-300"
-                >
-                  {departments.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedDept(val)}
+                  options={departments}
+                  placeholder="All Departments"
+                  searchable={true}
+                />
               </div>
 
               {/* Semester */}
               <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Semester
                 </label>
-                <select
+                <CustomSelect
+                  size="sm"
                   value={selectedSemester}
-                  onChange={(e) => setSelectedSemester(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 outline-none transition-colors hover:border-slate-300"
-                >
-                  {semesters.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedSemester(val)}
+                  options={semesters}
+                  placeholder="All Semesters"
+                />
               </div>
 
               {/* Subject */}
               <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Subject
                 </label>
-                <select
+                <CustomSelect
+                  size="sm"
                   value={selectedSubject}
-                  onChange={(e) => setSelectedSubject(e.target.value)}
-                  className="mt-1 w-full rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 outline-none transition-colors hover:border-slate-300"
-                >
-                  {subjects.map((sub) => (
-                    <option key={sub} value={sub}>{sub}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedSubject(val)}
+                  options={subjects}
+                  placeholder="All Subjects"
+                  searchable={true}
+                />
               </div>
 
               {/* Sort By */}
               <div>
-                <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                   Sort By
                 </label>
-                <select
+                <CustomSelect
+                  size="sm"
                   value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as "recent" | "downloads")}
-                  className="mt-1 w-full rounded-xl border border-slate-200/80 bg-white px-3 py-1.5 text-xs font-medium text-slate-900 outline-none transition-colors hover:border-slate-300"
-                >
-                  <option value="recent">Most Recent</option>
-                  <option value="downloads">Most Downloaded</option>
-                </select>
+                  onChange={(val) => setSortBy(val as "recent" | "downloads")}
+                  options={[
+                    { value: "recent", label: "Most Recent" },
+                    { value: "downloads", label: "Most Downloaded" },
+                  ]}
+                  searchable={false}
+                />
               </div>
             </div>
           </Reveal>
@@ -230,7 +226,7 @@ export default function BrowsePage() {
       </section>
 
       {/* Grid Section */}
-      <section className="relative bg-slate-50 py-12">
+      <section className="relative z-10 bg-slate-50 py-12">
         <div className="mx-auto w-full max-w-[1280px] px-6">
           <div className="mb-6 flex items-center justify-between">
             <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">

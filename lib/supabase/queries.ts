@@ -426,6 +426,52 @@ export async function removeDepartment(supabase: SupabaseClient, name: string) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SUBJECTS (per-department, per-course, per-semester)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Fetch subjects filtered by department + course + semester. */
+export async function getSubjects(
+  supabase: SupabaseClient,
+  department: string,
+  course: string,
+  semester: string
+) {
+  return supabase
+    .from("subjects")
+    .select("id, name")
+    .eq("department", department)
+    .eq("course", course)
+    .eq("semester", semester)
+    .order("name");
+}
+
+/** Fetch ALL subjects (for admin panel overview). */
+export async function getAllSubjects(supabase: SupabaseClient) {
+  return supabase
+    .from("subjects")
+    .select("id, department, course, semester, name")
+    .order("department")
+    .order("semester")
+    .order("name");
+}
+
+/** Admin: Add a subject. */
+export async function addSubject(
+  supabase: SupabaseClient,
+  department: string,
+  course: string,
+  semester: string,
+  name: string
+) {
+  return supabase.from("subjects").insert({ department, course, semester, name });
+}
+
+/** Admin: Remove a subject by id. */
+export async function removeSubject(supabase: SupabaseClient, id: string) {
+  return supabase.from("subjects").delete().eq("id", id);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SITE SETTINGS (admin-only row, single row table)
 // ─────────────────────────────────────────────────────────────────────────────
 

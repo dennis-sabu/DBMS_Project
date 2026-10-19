@@ -14,12 +14,26 @@
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
+import {
+  ALL_DEPARTMENTS,
+  ALL_COURSES,
+  ALL_SEMESTERS,
+  ALL_SUBJECTS_FLAT,
+} from "@/lib/filter-config";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types (kept compatible with the original store API)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export type NoteStatus = "Pending" | "Approved" | "Rejected";
+
+export interface SubjectEntry {
+  id: string;
+  department: string;
+  course: string;
+  semester: string;
+  name: string;
+}
 
 export interface AcademicNote {
   id: string;
@@ -78,29 +92,10 @@ export interface ActivityLog {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const INITIAL_ACADEMIC_YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
-const INITIAL_COURSES = ["B.Tech", "B.Sc", "B.CA", "M.Tech", "M.Sc"];
-const INITIAL_DEPARTMENTS = [
-  "Artificial Intelligence and Data Science",
-  "Basic Sciences & Humanities",
-  "Civil Engineering",
-  "Computer Science & Engineering",
-  "Electrical & Electronics Engineering",
-  "Electronics and Communication Engineering",
-  "Electronics and Computer Engineering",
-  "Electronics and Instrumentation Engineering",
-  "Information Technology",
-  "Mechanical Engineering",
-];
-const INITIAL_SEMESTERS = [
-  "Semester 1", "Semester 2", "Semester 3", "Semester 4",
-  "Semester 5", "Semester 6", "Semester 7", "Semester 8",
-];
-const INITIAL_SUBJECTS = [
-  "Applied Mathematics II", "Database Management Systems",
-  "Data Structures & Algorithms", "Digital Logic Design",
-  "Linear Algebra", "Operating Systems", "Computer Networks",
-  "Software Engineering", "Object Oriented Programming",
-];
+const INITIAL_COURSES = ALL_COURSES;
+const INITIAL_DEPARTMENTS = ALL_DEPARTMENTS;
+const INITIAL_SEMESTERS = ALL_SEMESTERS;
+const INITIAL_SUBJECTS = ALL_SUBJECTS_FLAT;
 
 const DEFAULT_SITE_SETTINGS: SiteSettings = {
   announcementBanner: "Over 12k notes shared this week",
@@ -188,7 +183,9 @@ export function useNotesStore() {
   const [academicYears] = useState<string[]>(INITIAL_ACADEMIC_YEARS);
   const [coursesList] = useState<string[]>(INITIAL_COURSES);
   const [semestersList] = useState<string[]>(INITIAL_SEMESTERS);
-  const [subjectsList] = useState<string[]>(INITIAL_SUBJECTS);
+  // allSubjects is loaded from DB; subjectsList kept for legacy callers (deduplicated)
+  const [allSubjects, setAllSubjects] = useState<SubjectEntry[]>([]);
+  const subjectsList = [...new Set(allSubjects.map((s) => s.name))].sort();
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(DEFAULT_SITE_SETTINGS);
   const [bookmarks, setBookmarks] = useState<string[]>([]);
   const [activityLogs] = useState<ActivityLog[]>([]);
@@ -240,7 +237,7 @@ export function useNotesStore() {
 
   const loadNotes = useCallback(async () => {
     try {
-      const res = await fetch("/api/notes");
+      const res = await fetch("/api/notes", { cache: "no-store" });
       if (res.ok) {
         const json = await res.json();
         if (json.notes) {
@@ -301,6 +298,16 @@ export function useNotesStore() {
     if (data) setUsersList(data.map(mapUser));
   }, [supabase]);
 
+  const loadAllSubjects = useCallback(async () => {
+    const { data } = await supabase
+      .from("subjects")
+      .select("id, department, course, semester, name")
+      .order("department")
+      .order("semester")
+      .order("name");
+    if (data) setAllSubjects(data as SubjectEntry[]);
+  }, [supabase]);
+
   useEffect(() => {
     let mounted = true;
 
@@ -315,7 +322,7 @@ export function useNotesStore() {
       setAuthUser(user);
 
       // 2. Load common data
-      await Promise.all([loadNotes(), loadDepartments(), loadSiteSettings()]);
+      await Promise.all([loadNotes(), loadDepartments(), loadSiteSettings(), loadAllSubjects()]);
 
       // 3. Load user-specific data
       if (user) {
@@ -350,9 +357,39 @@ export function useNotesStore() {
       }
     });
 
+    // 5. Realtime: push new/updated notes into state automatically
+    //    This makes the admin queue update without a manual refresh.
+    const channel = supabase
+      .channel("academic_notes_changes")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "academic_notes" },
+        (payload) => {
+          if (!mounted) return;
+          const newNote = mapNote(payload.new);
+          setNotes((prev) => {
+            if (prev.some((n) => n.id === newNote.id)) return prev;
+            return [newNote, ...prev];
+          });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "UPDATE", schema: "public", table: "academic_notes" },
+        (payload) => {
+          if (!mounted) return;
+          const updated = mapNote(payload.new);
+          setNotes((prev) =>
+            prev.map((n) => (n.id === updated.id ? updated : n))
+          );
+        }
+      )
+      .subscribe();
+
     return () => {
       mounted = false;
       subscription.unsubscribe();
+      supabase.removeChannel(channel);
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -606,6 +643,36 @@ export function useNotesStore() {
     }
   };
 
+  // ── Subject management (DB-backed, per dept/course/semester) ──────────────
+
+  const addSubject = async (
+    department: string,
+    course: string,
+    semester: string,
+    name: string
+  ) => {
+    const val = name.trim();
+    if (!val) return { error: "Name required" };
+    const { error } = await supabase
+      .from("subjects")
+      .insert({ department, course, semester, name: val });
+    if (!error) {
+      setAllSubjects((prev) =>
+        [...prev, { id: crypto.randomUUID(), department, course, semester, name: val }]
+          .sort((a, b) => a.name.localeCompare(b.name))
+      );
+      // Reload from DB to get the real UUID
+      loadAllSubjects();
+    }
+    return { error };
+  };
+
+  const removeSubject = async (id: string) => {
+    const { error } = await supabase.from("subjects").delete().eq("id", id);
+    if (!error) setAllSubjects((prev) => prev.filter((s) => s.id !== id));
+    return { error };
+  };
+
   // ── Site settings ─────────────────────────────────────────────────────────
 
   const updateSiteSettings = async (partial: Partial<SiteSettings>) => {
@@ -715,6 +782,7 @@ export function useNotesStore() {
     departmentsList,
     semestersList,
     subjectsList,
+    allSubjects,
     siteSettings,
     activityLogs,
     bookmarks,
@@ -731,11 +799,15 @@ export function useNotesStore() {
     toggleUserRole,
     addAcademicItem,
     deleteAcademicItem,
+    addSubject,
+    removeSubject,
     updateSiteSettings,
     signupUser,
     loginUser,
     loginAsAdmin,
     loginAsStudent,
     logout,
+    /** Manually re-fetch notes from the server (useful for admin refresh). */
+    refreshNotes: loadNotes,
   };
 }

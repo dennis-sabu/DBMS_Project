@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   FaShieldHalved,
@@ -29,6 +29,7 @@ import {
   FaListCheck,
   FaLock,
   FaUserShield,
+  FaArrowsRotate,
 } from "react-icons/fa6";
 import Link from "next/link";
 import { Navbar } from "@/components/ui/navbar";
@@ -36,6 +37,17 @@ import { SectionBg } from "@/components/ui/section-bg";
 import { Reveal, Stagger, StaggerItem } from "@/components/ui/motion-presets";
 import { useNotesStore, AcademicNote } from "@/lib/notes-store";
 import { NoteViewer } from "@/components/ui/note-viewer";
+import {
+  ALL_DEPARTMENTS,
+  ALL_COURSES,
+  ALL_SEMESTERS,
+  FILTER_CONFIG,
+  getSemestersForProgram,
+  getSubjectsForProgramSemester,
+  getLevelForProgram,
+  getProgramsForLevel,
+} from "@/lib/filter-config";
+import { CustomSelect } from "@/components/ui/custom-select";
 
 export default function AdminDashboardPage() {
   const {
@@ -48,7 +60,7 @@ export default function AdminDashboardPage() {
     coursesList,
     departmentsList,
     semestersList,
-    subjectsList,
+    allSubjects,
     siteSettings,
     activityLogs,
     adminApproveNote,
@@ -62,13 +74,34 @@ export default function AdminDashboardPage() {
     toggleUserRole,
     addAcademicItem,
     deleteAcademicItem,
+    addSubject,
+    removeSubject,
     loginAsAdmin,
     currentUser,
     isLoaded,
+    refreshNotes,
   } = useNotesStore();
 
   /* Active Dashboard Tab */
   const [activeAdminTab, setActiveAdminTab] = useState<"moderation" | "settings" | "academic" | "users" | "analytics" | "logs">("moderation");
+
+  /* Refresh notes state */
+  const [refreshing, setRefreshing] = useState(false);
+
+  /* Auto-refresh notes on mount + whenever the upload form signals a new upload */
+  useEffect(() => {
+    refreshNotes();
+
+    const onNotesUpdated = () => refreshNotes();
+    window.addEventListener("notes-updated", onNotesUpdated);
+    return () => window.removeEventListener("notes-updated", onNotesUpdated);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleRefreshNotes = async () => {
+    setRefreshing(true);
+    await refreshNotes();
+    setRefreshing(false);
+  };
 
   /* Moderation sub-filter */
   const [modSubTab, setModSubTab] = useState<"pending" | "approved" | "rejected" | "deleted">("pending");
@@ -80,8 +113,43 @@ export default function AdminDashboardPage() {
   const [editingNote, setEditingNote] = useState<AcademicNote | null>(null);
 
   /* Academic Management State */
-  const [academicCat, setAcademicCat] = useState<"years" | "courses" | "departments" | "semesters" | "subjects">("subjects");
+  const [academicCat, setAcademicCat] = useState<"years" | "courses" | "departments" | "semesters">("departments");
   const [newAcademicInput, setNewAcademicInput] = useState("");
+
+  /* Subject Manager State */
+  const [subjDept, setSubjDept] = useState("");
+  const [subjCourse, setSubjCourse] = useState("");
+  const [subjSemester, setSubjSemester] = useState("");
+  const [newSubjectInput, setNewSubjectInput] = useState("");
+  const [subjSaving, setSubjSaving] = useState(false);
+
+  // Derive subject list from the canonical filter-config (single source of truth)
+  const subjDeptSemesters = subjDept ? getSemestersForProgram(subjDept) : ALL_SEMESTERS;
+  const configSubjects = (subjDept && subjSemester)
+    ? getSubjectsForProgramSemester(subjDept, subjSemester)
+    : [];
+  // Also include any DB-backed subjects not in the config (custom additions)
+  const dbExtraSubjects = allSubjects.filter(
+    (s) =>
+      (!subjDept || s.department === subjDept) &&
+      (!subjCourse || s.course === subjCourse) &&
+      (!subjSemester || s.semester === subjSemester) &&
+      !configSubjects.includes(s.name)
+  );
+  // Merged subject list: config subjects first, then DB extras
+  const mergedSubjectNames = [
+    ...configSubjects,
+    ...dbExtraSubjects.map((s) => s.name),
+  ];
+  const filteredSubjects = mergedSubjectNames.map((name, i) => ({
+    id: `config-${i}`,
+    name,
+    department: subjDept,
+    course: subjCourse,
+    semester: subjSemester,
+    isFromConfig: configSubjects.includes(name),
+    dbEntry: dbExtraSubjects.find((s) => s.name === name),
+  }));
 
   /* Admin Password Login State */
   const [adminPasswordInput, setAdminPasswordInput] = useState("");
@@ -355,18 +423,29 @@ export default function AdminDashboardPage() {
                   </p>
                 </div>
 
-                {pendingNotes.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    onClick={() => {
-                      if (confirm("Approve all pending notes at once?")) {
-                        adminBatchApprovePending();
-                      }
-                    }}
-                    className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700"
+                    onClick={handleRefreshNotes}
+                    disabled={refreshing}
+                    className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-60"
                   >
-                    <FaCheckDouble className="size-3.5" /> Approve All Pending ({pendingNotes.length})
+                    <FaArrowsRotate className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
+                    {refreshing ? "Refreshing…" : "Refresh Queue"}
                   </button>
-                )}
+
+                  {pendingNotes.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (confirm("Approve all pending notes at once?")) {
+                          adminBatchApprovePending();
+                        }
+                      }}
+                      className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-700"
+                    >
+                      <FaCheckDouble className="size-3.5" /> Approve All Pending ({pendingNotes.length})
+                    </button>
+                  )}
+                </div>
               </div>
 
               {/* Sub-tabs */}
@@ -605,81 +684,194 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
-          {/* TAB 3: Academic Management Panel (Item 14) */}
+          {/* TAB 3: Academic Management Panel */}
           {activeAdminTab === "academic" && (
-            <div className="rounded-3xl border border-white/70 bg-white/80 p-8 shadow-sm backdrop-blur-xl">
-              <h2 className="text-xl font-bold text-slate-950">Academic Structure Management</h2>
-              <p className="mt-1 text-xs text-slate-600">
-                Centralized management for Academic Years, Courses, Departments, Semesters, and Subjects.
-              </p>
+            <div className="space-y-6">
 
-              {/* Sub Category Selector */}
-              <div className="mt-6 flex flex-wrap gap-2">
-                {(["subjects", "departments", "courses", "years", "semesters"] as const).map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setAcademicCat(cat)}
-                    className={`capitalize rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
-                      academicCat === cat ? "bg-slate-950 text-white shadow-xs" : "border border-slate-200 bg-white text-slate-700"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
+              {/* ── Subject Manager ─────────────────────────────────────── */}
+              <div className="rounded-3xl border border-white/70 bg-white/80 p-8 shadow-sm backdrop-blur-xl">
+                <h2 className="text-xl font-bold text-slate-950">Subject Manager</h2>
+                <p className="mt-1 text-xs text-slate-600">
+                  View subjects per department and semester from the canonical academic structure. Custom subjects can also be added to the database.
+                </p>
 
-              {/* Add Input */}
-              <div className="mt-6 flex max-w-md gap-2">
-                <input
-                  type="text"
-                  value={newAcademicInput}
-                  onChange={(e) => setNewAcademicInput(e.target.value)}
-                  placeholder={`Enter new ${academicCat.slice(0, -1)} name...`}
-                  className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-medium text-slate-900 outline-none"
-                />
-                <button
-                  onClick={() => {
-                    if (newAcademicInput.trim()) {
-                      addAcademicItem(academicCat, newAcademicInput);
-                      setNewAcademicInput("");
-                    }
-                  }}
-                  className="inline-flex items-center gap-1.5 rounded-full bg-slate-950 px-5 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
-                >
-                  <FaPlus className="size-3" /> Add {academicCat.slice(0, -1)}
-                </button>
-              </div>
-
-              {/* Academic Items List */}
-              <div className="mt-6 space-y-2 max-w-xl">
-                {(
-                  academicCat === "years"
-                    ? academicYears
-                    : academicCat === "courses"
-                    ? coursesList
-                    : academicCat === "departments"
-                    ? departmentsList
-                    : academicCat === "semesters"
-                    ? semestersList
-                    : subjectsList
-                ).map((item) => (
-                  <div
-                    key={item}
-                    className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white p-3.5 text-xs shadow-2xs"
-                  >
-                    <span className="font-semibold text-slate-900">{item}</span>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Delete "${item}" from ${academicCat}?`)) {
-                          deleteAcademicItem(academicCat, item);
-                        }
-                      }}
-                      className="font-semibold text-rose-600 hover:underline"
-                    >
-                      Delete
-                    </button>
+                {/* Filters */}
+                <div className="mt-6 grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Course Level</label>
+                    <CustomSelect
+                      size="sm"
+                      value={subjCourse}
+                      onChange={(val) => { setSubjCourse(val); setSubjDept(""); setSubjSemester(""); }}
+                      options={[{ value: "", label: "All Levels" }, ...ALL_COURSES.map((c) => ({ value: c, label: c }))]}
+                      placeholder="All Levels"
+                    />
                   </div>
-                ))}
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Department (Program)</label>
+                    <CustomSelect
+                      size="sm"
+                      value={subjDept}
+                      onChange={(val) => { setSubjDept(val); setSubjSemester(""); }}
+                      options={[
+                        { value: "", label: "All Departments" },
+                        ...(subjCourse
+                          ? getProgramsForLevel(subjCourse).map((p) => ({ value: p.name, label: p.name }))
+                          : ALL_DEPARTMENTS.map((d) => ({ value: d, label: d }))
+                        )
+                      ]}
+                      placeholder="All Departments"
+                      searchable={true}
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Semester</label>
+                    <CustomSelect
+                      size="sm"
+                      value={subjSemester}
+                      onChange={(val) => setSubjSemester(val)}
+                      options={[{ value: "", label: "All Semesters" }, ...subjDeptSemesters.map((s) => ({ value: s, label: s }))]}
+                      placeholder="All Semesters"
+                    />
+                  </div>
+                </div>
+
+                {/* Add new subject (DB custom addition) */}
+                <div className="mt-5 flex max-w-lg gap-2">
+                  <input
+                    type="text"
+                    value={newSubjectInput}
+                    onChange={(e) => setNewSubjectInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.form?.requestSubmit(); }}
+                    placeholder="Add a custom subject to DB..."
+                    disabled={!subjDept || !subjSemester}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-medium text-slate-900 outline-none focus:border-slate-400 disabled:opacity-50"
+                  />
+                  <button
+                    disabled={!subjDept || !subjSemester || !newSubjectInput.trim() || subjSaving}
+                    onClick={async () => {
+                      if (!subjDept || !subjSemester || !newSubjectInput.trim()) return;
+                      setSubjSaving(true);
+                      await addSubject(subjDept, subjCourse || getLevelForProgram(subjDept), subjSemester, newSubjectInput.trim());
+                      setNewSubjectInput("");
+                      setSubjSaving(false);
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-950 px-5 py-2.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    <FaPlus className="size-3" />
+                    {subjSaving ? "Adding..." : "Add to DB"}
+                  </button>
+                </div>
+                {(!subjDept || !subjSemester) && (
+                  <p className="mt-2 text-[11px] text-amber-600">⚠ Select a department and semester above to see subjects.</p>
+                )}
+
+                {/* Subject list */}
+                <div className="mt-5 space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {filteredSubjects.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-xs text-slate-500">
+                      {subjDept && subjSemester
+                        ? "No subjects found for this department + semester combination."
+                        : "Select a department and semester to see subjects."}
+                    </div>
+                  ) : (
+                    filteredSubjects.map((s) => (
+                      <div
+                        key={s.id}
+                        className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white px-4 py-3 text-xs shadow-2xs"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-slate-900 truncate">{s.name}</p>
+                          <p className="text-slate-400 mt-0.5">
+                            {s.isFromConfig ? "📘 From academic config" : "📝 Custom (DB)"}
+                          </p>
+                        </div>
+                        {!s.isFromConfig && s.dbEntry && (
+                          <button
+                            onClick={async () => {
+                              if (confirm(`Remove custom subject "${s.name}"?`)) {
+                                await removeSubject(s.dbEntry!.id);
+                              }
+                            }}
+                            className="ml-4 shrink-0 font-semibold text-rose-600 hover:underline"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <p className="mt-3 text-[11px] text-slate-400">
+                  {filteredSubjects.length} subject{filteredSubjects.length !== 1 ? "s" : ""} shown
+                  {configSubjects.length > 0 && ` (${configSubjects.length} from config)`}
+                  {dbExtraSubjects.length > 0 && ` · ${dbExtraSubjects.length} custom in DB`}
+                </p>
+              </div>
+
+              {/* ── Other Academic Items (Departments etc.) ──────────────── */}
+              <div className="rounded-3xl border border-white/70 bg-white/80 p-8 shadow-sm backdrop-blur-xl">
+                <h2 className="text-xl font-bold text-slate-950">Other Academic Items</h2>
+                <p className="mt-1 text-xs text-slate-600">Manage Departments, Academic Years, Courses, and Semesters.</p>
+
+                <div className="mt-6 flex flex-wrap gap-2">
+                  {(["departments", "courses", "years", "semesters"] as const).map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setAcademicCat(cat)}
+                      className={`capitalize rounded-full px-4 py-1.5 text-xs font-semibold transition-all ${
+                        academicCat === cat ? "bg-slate-950 text-white shadow-xs" : "border border-slate-200 bg-white text-slate-700"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-6 flex max-w-md gap-2">
+                  <input
+                    type="text"
+                    value={newAcademicInput}
+                    onChange={(e) => setNewAcademicInput(e.target.value)}
+                    placeholder={`Enter new ${academicCat.slice(0, -1)} name...`}
+                    className="flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-medium text-slate-900 outline-none"
+                  />
+                  <button
+                    onClick={() => {
+                      if (newAcademicInput.trim()) {
+                        addAcademicItem(academicCat, newAcademicInput);
+                        setNewAcademicInput("");
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-slate-950 px-5 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+                  >
+                    <FaPlus className="size-3" /> Add {academicCat.slice(0, -1)}
+                  </button>
+                </div>
+
+                <div className="mt-6 space-y-2 max-w-xl">
+                  {(
+                    academicCat === "years" ? academicYears
+                    : academicCat === "courses" ? coursesList
+                    : academicCat === "departments" ? departmentsList
+                    : semestersList
+                  ).map((item) => (
+                    <div key={item} className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white p-3.5 text-xs shadow-2xs">
+                      <span className="font-semibold text-slate-900">{item}</span>
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete "${item}" from ${academicCat}?`)) {
+                            deleteAcademicItem(academicCat, item);
+                          }
+                        }}
+                        className="font-semibold text-rose-600 hover:underline"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -985,47 +1177,79 @@ export default function AdminDashboardPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block font-semibold">Subject</label>
-                    <input
-                      name="subject"
-                      defaultValue={editingNote.subject}
-                      className="mt-1 block w-full rounded-xl border border-slate-200 bg-white p-2.5 text-slate-900"
-                    />
-                  </div>
-                  <div>
-                    <label className="block font-semibold">Course</label>
-                    <input
+                    <label className="block font-semibold">Course (Level)</label>
+                    <select
                       name="course"
                       defaultValue={editingNote.course}
                       className="mt-1 block w-full rounded-xl border border-slate-200 bg-white p-2.5 text-slate-900"
-                    />
+                    >
+                      <option value="">Select...</option>
+                      {ALL_COURSES.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                      {/* Keep current value if it doesn't match config */}
+                      {editingNote.course && !ALL_COURSES.includes(editingNote.course) && (
+                        <option value={editingNote.course}>{editingNote.course} (current)</option>
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold">Department (Program)</label>
+                    <select
+                      name="department"
+                      defaultValue={editingNote.department}
+                      className="mt-1 block w-full rounded-xl border border-slate-200 bg-white p-2.5 text-slate-900"
+                    >
+                      <option value="">Select...</option>
+                      {ALL_DEPARTMENTS.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                      {editingNote.department && !ALL_DEPARTMENTS.includes(editingNote.department) && (
+                        <option value={editingNote.department}>{editingNote.department} (current)</option>
+                      )}
+                    </select>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block font-semibold">Department</label>
-                    <input
-                      name="department"
-                      defaultValue={editingNote.department}
-                      className="mt-1 block w-full rounded-xl border border-slate-200 bg-white p-2.5 text-slate-900"
-                    />
-                  </div>
-                  <div>
                     <label className="block font-semibold">Semester</label>
-                    <input
+                    <select
                       name="semester"
                       defaultValue={editingNote.semester}
                       className="mt-1 block w-full rounded-xl border border-slate-200 bg-white p-2.5 text-slate-900"
-                    />
+                    >
+                      <option value="">Select...</option>
+                      {ALL_SEMESTERS.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                      {editingNote.semester && !ALL_SEMESTERS.includes(editingNote.semester) && (
+                        <option value={editingNote.semester}>{editingNote.semester} (current)</option>
+                      )}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block font-semibold">Academic Year</label>
+                    <select
+                      name="academicYear"
+                      defaultValue={editingNote.academicYear}
+                      className="mt-1 block w-full rounded-xl border border-slate-200 bg-white p-2.5 text-slate-900"
+                    >
+                      <option value="">Select...</option>
+                      {academicYears.map((y) => (
+                        <option key={y} value={y}>{y}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
                 <div>
-                  <label className="block font-semibold">Academic Year</label>
+                  <label className="block font-semibold">Subject</label>
                   <input
-                    name="academicYear"
-                    defaultValue={editingNote.academicYear}
+                    name="subject"
+                    defaultValue={editingNote.subject}
+                    placeholder="Subject name"
                     className="mt-1 block w-full rounded-xl border border-slate-200 bg-white p-2.5 text-slate-900"
                   />
+                  <p className="mt-1 text-[10px] text-slate-400">Free text — match it to the academic config for consistency.</p>
                 </div>
 
                 <div className="flex justify-end gap-2 pt-3">

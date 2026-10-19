@@ -15,21 +15,11 @@ import { SectionBg } from "@/components/ui/section-bg";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { ALL_DEPARTMENTS, ALL_COURSES } from "@/lib/filter-config";
 
-const FALLBACK_DEPARTMENTS = [
-  "Computer Science & Engineering",
-  "Information Technology",
-  "Electrical & Electronics Engineering",
-  "Mechanical Engineering",
-  "Civil Engineering",
-  "Basic Sciences & Humanities",
-  "Electronics and Communication Engineering",
-  "Electronics and Computer Engineering",
-  "Artificial Intelligence and Data Science",
-  "Electronics and Instrumentation Engineering",
-];
+const FALLBACK_DEPARTMENTS = ALL_DEPARTMENTS;
 
-const COURSES = ["B.Tech", "B.Sc", "B.CA", "M.Tech", "M.Sc"];
+const COURSES = ALL_COURSES;
 const ACADEMIC_YEARS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 
 export default function SignupPage() {

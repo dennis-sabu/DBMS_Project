@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   FaFilePdf,
@@ -78,11 +78,32 @@ export function NoteViewer({ note, isOpen, onClose, actions }: NoteViewerProps) 
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const fileType = note.fileType;
   const fileUrl = note.fileUrl;
+
+  // Detect mobile/tablet devices (iOS + Android don't support inline PDF iframes)
+  useEffect(() => {
+    const mobileRe = /android|ipad|iphone|ipod|mobile|tablet|touch/i;
+    const mobile =
+      mobileRe.test(navigator.userAgent) || ("ontouchstart" in window && window.innerWidth < 1024);
+    setIsMobile(mobile);
+    // Google Docs Viewer has its own loading UI and doesn't reliably fire onLoad,
+    // so clear the spinner immediately on mobile.
+    if (mobile) setLoading(false);
+  }, []);
+
+  // For PDF on mobile: use Google Docs Viewer which renders cross-device
+  const pdfEmbedUrl = useMemo(() => {
+    if (!fileUrl || !isPdf(fileType, note.fileName)) return null;
+    if (isMobile) {
+      return `https://docs.google.com/viewer?url=${encodeURIComponent(fileUrl)}&embedded=true`;
+    }
+    return fileUrl;
+  }, [fileUrl, fileType, note.fileName, isMobile]);
 
   const handleLoad = () => setLoading(false);
   const handleError = () => {
@@ -161,6 +182,21 @@ export function NoteViewer({ note, isOpen, onClose, actions }: NoteViewerProps) 
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
+  // Lock body scroll when modal is open so background page doesn't scroll on mobile.
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
+    } else {
+      document.body.style.overflow = "";
+      document.body.style.touchAction = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+      document.body.style.touchAction = "";
+    };
+  }, [isOpen]);
+
   // Reset zoom/rotation and loading state whenever a new note is opened.
   useEffect(() => {
     if (!isOpen) return;
@@ -178,11 +214,12 @@ export function NoteViewer({ note, isOpen, onClose, actions }: NoteViewerProps) 
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4"
         onClick={onClose}
         role="dialog"
         aria-modal="true"
         aria-labelledby="viewer-title"
+        style={{ touchAction: "none" }}
       >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -306,13 +343,14 @@ export function NoteViewer({ note, isOpen, onClose, actions }: NoteViewerProps) 
                 <FaRotateRight className="size-4" />
               </button>
             </div>
-            <div className="flex items-center gap-2 text-xs text-slate-500">
-              <span>Page navigation and thumbnails would go here</span>
-            </div>
           </div>
 
           {/* Document Viewer */}
-          <div className="relative flex-1 overflow-auto bg-slate-100">
+          <div
+            className="relative flex-1 overflow-auto bg-slate-100 overscroll-contain"
+            style={{ touchAction: "pan-y pan-x" }}
+            onClick={(e) => e.stopPropagation()}
+          >
             {!fileUrl ? (
               <div className="flex h-full items-center justify-center p-8">
                 <div className="text-center">
@@ -339,22 +377,47 @@ export function NoteViewer({ note, isOpen, onClose, actions }: NoteViewerProps) 
                 </div>
               </div>
             ) : isPdf(fileType, note.fileName) ? (
-              <>
-                {loading && <ViewerSpinner />}
-                <iframe
-                  ref={iframeRef}
-                  src={fileUrl}
-                  className="h-full w-full border-0"
-                  style={{
-                    transform: `scale(${scale}) rotate(${rotation}deg)`,
-                    transformOrigin: "center center",
-                  }}
-                  title={note.title}
-                  onLoad={handleLoad}
-                  onError={handleError}
-                  allow="fullscreen"
-                />
-              </>
+              isMobile ? (
+                /* ── Mobile: Google Docs Viewer (has its own loading UI) ── */
+                <div className="flex h-full flex-col">
+                  <iframe
+                    ref={iframeRef}
+                    src={pdfEmbedUrl ?? undefined}
+                    className="flex-1 w-full border-0"
+                    title={note.title}
+                    allow="fullscreen"
+                  />
+                  {/* Persistent fallback banner */}
+                  <div className="shrink-0 flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-4 py-3">
+                    <span className="text-xs text-slate-500">Can&apos;t see the PDF? Open it directly.</span>
+                    <button
+                      onClick={openInNewTab}
+                      className="inline-flex items-center gap-2 rounded-full bg-slate-950 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 active:scale-95 transition-transform"
+                    >
+                      <FaArrowUpRightFromSquare className="size-3" />
+                      Open PDF
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* ── Desktop: native browser PDF iframe ── */
+                <>
+                  {loading && <ViewerSpinner />}
+                  <iframe
+                    ref={iframeRef}
+                    src={fileUrl}
+                    className="h-full w-full border-0"
+                    style={{
+                      transform: `scale(${scale}) rotate(${rotation}deg)`,
+                      transformOrigin: "center center",
+                    }}
+                    title={note.title}
+                    onLoad={handleLoad}
+                    onError={handleError}
+                    allow="fullscreen"
+                  />
+                </>
+              )
             ) : isImage(fileType, note.fileName) ? (
               <>
                 {loading && <ViewerSpinner />}

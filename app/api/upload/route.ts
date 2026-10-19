@@ -15,27 +15,9 @@ function getAdminClient() {
   return createClient(supabaseUrl, serviceRoleKey);
 }
 
-/**
- * Ensures the public "notes" storage bucket exists.
- * Safe to call on every request — it becomes a no-op once created.
- */
-async function ensureBucket(admin: ReturnType<typeof getAdminClient>) {
-  const { data: buckets, error } = await admin.storage.listBuckets();
-  if (error) throw error;
-  if (buckets?.some((b) => b.name === BUCKET)) return;
-
-  const { error: createError } = await admin.storage.createBucket(BUCKET, {
-    public: true,
-    fileSizeLimit: MAX_FILE_BYTES,
-  });
-  if (createError && !/already exists/i.test(createError.message)) {
-    throw createError;
-  }
-}
-
 // ── POST /api/upload ──────────────────────────────────────────────────────────
 // Issues a short-lived signed upload URL so the browser can upload the file
-// directly to Supabase Storage (bypassing RLS and serverless body limits).
+// directly to Supabase Storage (the bucket already exists — no need to check).
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -48,59 +30,43 @@ export async function POST(request: Request) {
     }
 
     const admin = getAdminClient();
-    await ensureBucket(admin);
 
-    // Multi-tier authentication:
-    // 1. Bearer token in Authorization header
-    // 2. Cookie session via createServerSupabase
-    // 3. Verified uploader ID in public.users / auth
+    // ── Authenticate the uploader ──────────────────────────────────────────
+    // Priority: 1) Bearer token in Authorization header, 2) Cookie session,
+    // 3) Verified uploaderId from the request body (fallback).
     let userId: string | null = null;
 
+    // 1. Bearer token (fastest — already validated by Supabase Auth)
     const authHeader = request.headers.get("Authorization");
     if (authHeader?.startsWith("Bearer ")) {
       const token = authHeader.replace("Bearer ", "").trim();
-      if (token) {
-        try {
-          const { data: tokenUser } = await admin.auth.getUser(token);
-          if (tokenUser?.user) {
-            userId = tokenUser.user.id;
-          }
-        } catch {
-          // Fall through
-        }
+      try {
+        const { data } = await admin.auth.getUser(token);
+        if (data?.user) userId = data.user.id;
+      } catch {
+        // fall through
       }
     }
 
+    // 2. Cookie-based session (SSR)
     if (!userId) {
       try {
         const supabase = await createServerSupabase();
-        const { data: cookieUser } = await supabase.auth.getUser();
-        if (cookieUser?.user) {
-          userId = cookieUser.user.id;
-        }
+        const { data } = await supabase.auth.getUser();
+        if (data?.user) userId = data.user.id;
       } catch {
-        // Fall through
+        // fall through
       }
     }
 
+    // 3. Fallback: trust the uploaderId sent from the client
+    //    (only reached when cookies aren't set, e.g. first upload after signup)
     if (!userId && uploaderId) {
       try {
-        const { data: profile } = await admin
-          .from("users")
-          .select("id, status")
-          .eq("id", uploaderId)
-          .maybeSingle();
-
-        if (profile && profile.status !== "Suspended") {
-          userId = profile.id;
-        } else {
-          const { data: authUser } = await admin.auth.admin.getUserById(uploaderId);
-          if (authUser?.user) {
-            userId = authUser.user.id;
-          }
-        }
+        const { data } = await admin.auth.admin.getUserById(uploaderId);
+        if (data?.user) userId = data.user.id;
       } catch {
-        // Fall through
+        // fall through
       }
     }
 
@@ -111,6 +77,7 @@ export async function POST(request: Request) {
       );
     }
 
+    // ── Build object path and create a signed upload URL ──────────────────
     const safeName =
       fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80) || "document";
     const objectPath = `${userId}/${Date.now()}-${randomUUID()}-${safeName}`;

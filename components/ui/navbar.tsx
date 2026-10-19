@@ -19,6 +19,7 @@ export function Navbar() {
   // Auth state — read directly from Supabase so it's always accurate
   const [user, setUser] = useState<SupabaseUser | null>(null);
   const [userName, setUserName] = useState<string>("");
+  const [userRole, setUserRole] = useState<string>("user");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -40,6 +41,7 @@ export function Navbar() {
           await fetchName(supabase, u);
         } else {
           setUserName("");
+          setUserRole("user");
         }
         setReady(true);
       }
@@ -58,13 +60,20 @@ export function Navbar() {
     try {
       const { data } = await supabase
         .from("users")
-        .select("name")
+        .select("name, role")
         .eq("id", user.id)
         .maybeSingle();
-      if (data?.name) {
-        setUserName(data.name);
-        return;
+      if (data?.name) setUserName(data.name);
+      else {
+        const fallback =
+          (user.user_metadata?.name as string | undefined) ||
+          user.email?.split("@")[0] ||
+          "Student";
+        setUserName(fallback);
       }
+      // Use DB role as the source of truth for admin detection
+      if (data?.role) setUserRole(data.role);
+      return;
     } catch {
       // Fall through to fallback
     }
@@ -80,6 +89,7 @@ export function Navbar() {
     await supabase.auth.signOut();
     setUser(null);
     setUserName("");
+    setUserRole("user");
     router.push("/");
     router.refresh();
   }
@@ -91,9 +101,10 @@ export function Navbar() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // isAdmin: DB role is the source of truth; hardcoded email is legacy fallback
   const isAdmin =
-    user?.email === "dennissabu444@gmail.com" ||
-    user?.app_metadata?.role === "admin";
+    userRole === "admin" ||
+    user?.email === "dennissabu444@gmail.com";
 
   const navLinks = user
     ? [

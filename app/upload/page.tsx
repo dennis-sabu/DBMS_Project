@@ -38,7 +38,7 @@ export default function UploadPage() {
     <main className="min-h-screen bg-slate-50 font-sans text-slate-950 antialiased">
       <Navbar />
 
-      <section className="relative isolate overflow-hidden bg-gradient-to-b from-sky-200 via-sky-100 to-slate-50 pt-32 pb-20">
+      <section className="relative z-20 bg-gradient-to-b from-sky-200 via-sky-100 to-slate-50 pt-32 pb-20">
         <SectionBg />
 
         <div className="relative z-10 mx-auto w-full max-w-[1280px] px-6">

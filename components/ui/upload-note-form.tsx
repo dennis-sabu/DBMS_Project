@@ -19,6 +19,17 @@ import { cn } from "@/lib/utils";
 import Link from "next/link";
 import { useNotesStore } from "@/lib/notes-store";
 import { createClient } from "@/lib/supabase/client";
+import { CustomSelect } from "@/components/ui/custom-select";
+import {
+  ALL_DEPARTMENTS,
+  ALL_COURSES,
+  ALL_SEMESTERS,
+  FILTER_CONFIG,
+  getSemestersForProgram,
+  getSubjectsForProgramSemester,
+  getLevelForProgram,
+  getProgramsForLevel,
+} from "@/lib/filter-config";
 
 /**
  * Uploads a file straight to Supabase Storage using a signed upload URL
@@ -95,21 +106,20 @@ interface FieldProps {
   hint?: string;
   required?: boolean;
   children: React.ReactNode;
-  htmlFor?: string;
 }
 
-function Field({ label, hint, required, children, htmlFor }: FieldProps) {
+function Field({ label, hint, required, children }: FieldProps) {
   return (
-    <label htmlFor={htmlFor} className="block">
-      <span className="flex items-center justify-between">
+    <div className="block">
+      <div className="flex items-center justify-between">
         <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-600">
           {label}
           {required && <span className="ml-1 text-rose-500">*</span>}
         </span>
         {hint && <span className="text-[11px] text-slate-400">{hint}</span>}
-      </span>
+      </div>
       <div className="mt-2">{children}</div>
-    </label>
+    </div>
   );
 }
 
@@ -132,11 +142,29 @@ export function UploadNoteForm() {
     currentUser,
     addNote,
     academicYears,
-    coursesList,
-    departmentsList,
-    semestersList,
-    subjectsList,
   } = useNotesStore();
+
+  // Controlled selectors — cascading: Course → Department → Semester → Subject
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState("");
+  const [selectedCourse, setSelectedCourse] = useState("");
+  const [selectedDept, setSelectedDept] = useState("");
+  const [selectedSemester, setSelectedSemester] = useState("");
+  const [selectedSubject, setSelectedSubject] = useState("");
+
+  // Derive available departments (programs) for selected course level
+  const departmentOptions = selectedCourse
+    ? getProgramsForLevel(selectedCourse).map((p) => p.name)
+    : ALL_DEPARTMENTS;
+
+  // Derive available semesters for selected department (program)
+  const semesterOptions = selectedDept
+    ? getSemestersForProgram(selectedDept)
+    : ALL_SEMESTERS;
+
+  // Derive subjects from the static config — the single source of truth
+  const subjectOptions = (selectedDept && selectedSemester)
+    ? getSubjectsForProgramSemester(selectedDept, selectedSemester)
+    : [];
 
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -179,11 +207,11 @@ export function UploadNoteForm() {
 
     const title = form.get("title")?.toString().trim() || "";
     const description = form.get("description")?.toString().trim() || "";
-    const academicYear = form.get("academicYear")?.toString().trim() || "";
-    const course = form.get("course")?.toString().trim() || "";
-    const department = form.get("department")?.toString().trim() || "";
-    const semester = form.get("semester")?.toString().trim() || "";
-    const subject = form.get("subject")?.toString().trim() || "";
+    const academicYear = selectedAcademicYear || form.get("academicYear")?.toString().trim() || "";
+    const course = selectedCourse || form.get("course")?.toString().trim() || "";
+    const department = selectedDept || form.get("department")?.toString().trim() || "";
+    const semester = selectedSemester || form.get("semester")?.toString().trim() || "";
+    const subject = selectedSubject || form.get("subject")?.toString().trim() || "";
 
     if (!title) nextErrors.title = "Add a title.";
     if (!description) nextErrors.description = "Provide a brief description.";
@@ -213,7 +241,7 @@ export function UploadNoteForm() {
         fileUrl = await uploadNoteFile(file, currentUser.id, token);
       }
 
-      await addNote({
+      const savedNote = await addNote({
         title,
         description,
         academicYear,
@@ -229,7 +257,20 @@ export function UploadNoteForm() {
         fileUrl,
       });
 
+      if (!savedNote) {
+        throw new Error("Note could not be saved. Please try again.");
+      }
+
+      setSelectedAcademicYear("");
+      setSelectedCourse("");
+      setSelectedDept("");
+      setSelectedSemester("");
+      setSelectedSubject("");
+      setFile(null);
       setSubmitted(true);
+
+      // Notify other open components (e.g. admin page) that new notes are available
+      window.dispatchEvent(new CustomEvent("notes-updated"));
     } catch (err) {
       setErrors((prev) => ({
         ...prev,
@@ -314,6 +355,11 @@ export function UploadNoteForm() {
             onClick={() => {
               setSubmitted(false);
               setFile(null);
+              setSelectedAcademicYear("");
+              setSelectedCourse("");
+              setSelectedDept("");
+              setSelectedSemester("");
+              setSelectedSubject("");
             }}
             className="inline-flex items-center gap-2 rounded-full border border-white/70 bg-white/70 px-5 py-3 text-sm font-medium text-slate-900 backdrop-blur-xl transition-colors hover:bg-white"
           >
@@ -345,119 +391,116 @@ export function UploadNoteForm() {
           {errors.title && <FieldError msg={errors.title} />}
         </Field>
 
-        {/* Academic Year & Course */}
+        {/* Academic Year & Course (Level) */}
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Academic Year" required>
-            <select
+            <CustomSelect
               id="academicYear"
               name="academicYear"
-              defaultValue=""
-              className={cn(inputClass, errors.academicYear && "border-rose-300 focus:border-rose-400 focus:ring-rose-400/20")}
-            >
-              <option value="" disabled>Select Academic Year...</option>
-              {academicYears.map((y) => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+              value={selectedAcademicYear}
+              onChange={(val) => {
+                setSelectedAcademicYear(val);
+                if (errors.academicYear) setErrors((e) => ({ ...e, academicYear: undefined }));
+              }}
+              options={academicYears}
+              placeholder="Select Academic Year..."
+              error={Boolean(errors.academicYear)}
+            />
             {errors.academicYear && <FieldError msg={errors.academicYear} />}
           </Field>
 
           <Field label="Course" required>
-            <select
+            <CustomSelect
               id="course"
               name="course"
-              defaultValue=""
-              className={cn(inputClass, errors.course && "border-rose-300 focus:border-rose-400 focus:ring-rose-400/20")}
-            >
-              <option value="" disabled>Select Course...</option>
-              {coursesList.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+              value={selectedCourse}
+              onChange={(val) => {
+                setSelectedCourse(val);
+                setSelectedDept("");
+                setSelectedSemester("");
+                setSelectedSubject("");
+                if (errors.course) setErrors((e) => ({ ...e, course: undefined }));
+              }}
+              options={ALL_COURSES}
+              placeholder="Select Course..."
+              error={Boolean(errors.course)}
+            />
             {errors.course && <FieldError msg={errors.course} />}
           </Field>
         </div>
 
-        {/* Department & Semester */}
+        {/* Department (Program) & Semester */}
         <div className="grid gap-5 sm:grid-cols-2">
           <Field label="Department" required>
-            <select
+            <CustomSelect
               id="department"
               name="department"
-              defaultValue={currentUser?.department || ""}
-              className={cn(inputClass, errors.department && "border-rose-300 focus:border-rose-400 focus:ring-rose-400/20")}
-            >
-              <option value="" disabled>Select Department...</option>
-              {(departmentsList && departmentsList.length > 0
-                ? departmentsList
-                : [
-                    "Artificial Intelligence and Data Science",
-                    "Basic Sciences & Humanities",
-                    "Civil Engineering",
-                    "Computer Science & Engineering",
-                    "Electrical & Electronics Engineering",
-                    "Electronics and Communication Engineering",
-                    "Electronics and Computer Engineering",
-                    "Electronics and Instrumentation Engineering",
-                    "Information Technology",
-                    "Mechanical Engineering",
-                  ]
-              ).map((d) => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
+              value={selectedDept}
+              onChange={(val) => {
+                setSelectedDept(val);
+                setSelectedSemester("");
+                setSelectedSubject("");
+                if (errors.department) setErrors((e) => ({ ...e, department: undefined }));
+              }}
+              options={departmentOptions}
+              placeholder={!selectedCourse ? "Select Course first..." : "Select Department..."}
+              disabled={!selectedCourse}
+              disabledMessage="Select Course first..."
+              searchable={true}
+              searchPlaceholder="Search department..."
+              error={Boolean(errors.department)}
+            />
             {errors.department && <FieldError msg={errors.department} />}
           </Field>
 
           <Field label="Semester" required>
-            <select
+            <CustomSelect
               id="semester"
               name="semester"
-              defaultValue=""
-              className={cn(inputClass, errors.semester && "border-rose-300 focus:border-rose-400 focus:ring-rose-400/20")}
-            >
-              <option value="" disabled>Select Semester...</option>
-              {semestersList.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+              value={selectedSemester}
+              onChange={(val) => {
+                setSelectedSemester(val);
+                setSelectedSubject("");
+                if (errors.semester) setErrors((e) => ({ ...e, semester: undefined }));
+              }}
+              options={semesterOptions}
+              placeholder={!selectedDept ? "Select Department first..." : "Select Semester..."}
+              disabled={!selectedDept}
+              disabledMessage="Select Department first..."
+              error={Boolean(errors.semester)}
+            />
             {errors.semester && <FieldError msg={errors.semester} />}
           </Field>
         </div>
 
         {/* Subject */}
-        <Field label="Subject" required>
-          <select
+        <Field label="Subject" required hint="Based on program & semester">
+          <CustomSelect
             id="subject"
             name="subject"
-            defaultValue=""
-            className={cn(inputClass, errors.subject && "border-rose-300 focus:border-rose-400 focus:ring-rose-400/20")}
-          >
-            <option value="" disabled>Select Subject...</option>
-            {(subjectsList && subjectsList.length > 0
-              ? subjectsList
-              : [
-                  "Applied Mathematics II",
-                  "Database Management Systems",
-                  "Data Structures & Algorithms",
-                  "Digital Logic Design",
-                  "Linear Algebra",
-                  "Operating Systems",
-                  "Computer Networks",
-                  "Software Engineering",
-                  "Object Oriented Programming",
-                  "Artificial Intelligence",
-                  "Machine Learning",
-                  "Cloud Computing",
-                  "Cyber Security",
-                  "Web Development",
-                ]
-            ).map((sub) => (
-              <option key={sub} value={sub}>
-                {sub}
-              </option>
-            ))}
-          </select>
+            value={selectedSubject}
+            onChange={(val) => {
+              setSelectedSubject(val);
+              if (errors.subject) setErrors((e) => ({ ...e, subject: undefined }));
+            }}
+            options={subjectOptions}
+            placeholder={
+              !selectedDept || !selectedSemester
+                ? "Select Department & Semester first..."
+                : subjectOptions.length === 0
+                ? "No subjects found for this selection"
+                : "Select Subject..."
+            }
+            disabled={!selectedDept || !selectedSemester || subjectOptions.length === 0}
+            disabledMessage={
+              !selectedDept || !selectedSemester
+                ? "Select Department & Semester first..."
+                : "No subjects found for this selection"
+            }
+            searchable={true}
+            searchPlaceholder="Search subject name..."
+            error={Boolean(errors.subject)}
+          />
           {errors.subject && <FieldError msg={errors.subject} />}
         </Field>
 
