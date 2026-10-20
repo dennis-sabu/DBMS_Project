@@ -41,13 +41,14 @@ export default function SignupPage() {
 
   useEffect(() => {
     const supabase = createClient();
+    if (!supabase) return;
     supabase
       .from("departments")
       .select("name")
       .order("name")
-      .then(({ data }) => {
+      .then(({ data }: { data: { name: string }[] | null }) => {
         if (data && data.length > 0) {
-          const list = data.map((d) => d.name);
+          const list = data.map((d: { name: string }) => d.name);
           setDepartments(list);
           if (!list.includes(department)) {
             setDepartment(list[0]);

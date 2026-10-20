@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
@@ -24,9 +25,10 @@ export function Navbar() {
 
   useEffect(() => {
     const supabase = createClient();
+    if (!supabase) return;
 
     // Get initial session
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: SupabaseUser | null } }) => {
       setUser(user ?? null);
       if (user) fetchName(supabase, user);
       setReady(true);
@@ -34,7 +36,7 @@ export function Navbar() {
 
     // Listen for login / logout events
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (_event: AuthChangeEvent, session: Session | null) => {
         const u = session?.user ?? null;
         setUser(u);
         if (u) {

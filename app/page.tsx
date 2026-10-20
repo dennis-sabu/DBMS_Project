@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { AuthChangeEvent, Session, User } from "@supabase/supabase-js";
 import { Hero9 } from "@/components/ui/hero-9";
 import { Navbar } from "@/components/ui/navbar";
 import { HomeAbout } from "@/components/ui/home-about";
@@ -14,11 +15,12 @@ export default function HomePage() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    if (!supabase) return;
+    supabase.auth.getUser().then(({ data: { user } }: { data: { user: User | null } }) => {
       setIsLoggedIn(!!user);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => setIsLoggedIn(!!session?.user)
+      (_event: AuthChangeEvent, session: Session | null) => setIsLoggedIn(!!session?.user)
     );
     return () => subscription.unsubscribe();
   }, []);

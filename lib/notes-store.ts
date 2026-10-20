@@ -13,7 +13,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { User } from "@supabase/supabase-js";
+import type { AuthChangeEvent, RealtimePostgresChangesPayload, Session, User } from "@supabase/supabase-js";
 import {
   ALL_DEPARTMENTS,
   ALL_COURSES,
@@ -263,7 +263,7 @@ export function useNotesStore() {
         .select("name")
         .order("name");
       if (data && data.length > 0) {
-        setDepartmentsList(data.map((d) => d.name));
+        setDepartmentsList(data.map((d: { name: string }) => d.name));
       }
     } catch {
       // Retain INITIAL_DEPARTMENTS fallback
@@ -285,7 +285,7 @@ export function useNotesStore() {
         .from("bookmarks")
         .select("note_id")
         .eq("user_id", userId);
-      if (data) setBookmarks(data.map((b) => b.note_id));
+      if (data) setBookmarks(data.map((b: { note_id: string }) => b.note_id));
     },
     [supabase]
   );
@@ -341,7 +341,7 @@ export function useNotesStore() {
     // 4. Listen for auth state changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event: AuthChangeEvent, session: Session | null) => {
       if (!mounted) return;
       const user = session?.user ?? null;
       setAuthUser(user);
@@ -364,7 +364,7 @@ export function useNotesStore() {
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "academic_notes" },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           if (!mounted) return;
           const newNote = mapNote(payload.new);
           setNotes((prev) => {
@@ -376,7 +376,7 @@ export function useNotesStore() {
       .on(
         "postgres_changes",
         { event: "UPDATE", schema: "public", table: "academic_notes" },
-        (payload) => {
+        (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
           if (!mounted) return;
           const updated = mapNote(payload.new);
           setNotes((prev) =>
